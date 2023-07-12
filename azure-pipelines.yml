@@ -1,0 +1,52 @@
+# Pipeline to take build artifacts from a pipeline and upload them to a cache so that other jobs
+# later in the pipeline can use them, you can make use of the Caching feature in Azure Pipelines. 
+
+trigger:
+- main
+
+stages:
+- stage: build
+  jobs:
+  - job: run_build
+    pool:
+      vmImage: 'windows-latest'
+    steps: 
+    - task: VSBuild@1
+      inputs:
+        solution: '**/*.sln'
+        msbuildArgs:  '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:DesktopBuildPackageLocation="$(build.artifactStagingDirectory)\WebApp.zip" /p:DeployIisAppPath="Default Web Site"'
+        platform: 'Any CPU'
+        configuration: 'Release'
+        
+    - task: CopyFiles@2
+      displayName: 'Copy scripts'
+      inputs:
+        Contents: 'script/**'
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    
+    - publish: '$(Build.ArtifactStagingDirectory)/scripts'
+      displayName: 'Publish script'
+      artifact: drop
+
+- stage: test
+  dependsOn: build 
+  jobs:
+  - job: run_test
+    pool: 
+      vmImage: 'windows-latest'
+    steps:
+    - download: current
+      artifact: drop
+    
+    - task: Cache@2
+      displayName: 'Cache artifacts'
+      inputs:
+        key: 'myArtifactCacheKey'
+        path: '$(Pipeline.Workspace)/drop'
+
+    - task: PowerShell@2
+      inputs:
+        filePath: '$(Pipeline.Workspace)/drop/test.ps1'
+      
+
+
